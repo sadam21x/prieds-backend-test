@@ -42,9 +42,53 @@ router.use('/import-data', async (req, res) => {
 })
 
 router.use('/edit-repacking-data', async (req, res) => {
-  
-  // Silahkan dikerjakan disini.
+  try {
+    const { company_id, payload, reject_qr_list, new_qr_list } = req.body;
 
+    if (!company_id || !payload) {
+      throw new Error('Missing required fields');
+    }
+
+    const lastRecord = await stock_read_log.findOne({ company_id, payload }).sort({ created_time: -1 }).exec();
+
+    if (!lastRecord) {
+      throw new Error('No record found');
+    }
+
+    let newQrList = lastRecord.qr_list;
+
+    if (Array.isArray(reject_qr_list) && reject_qr_list.length > 0) {
+      let rejectPayloadList = reject_qr_list.map(qr => qr.payload);
+      newQrList = newQrList.filter(qr => !rejectPayloadList.includes(qr.payload));
+    }
+
+    if (Array.isArray(new_qr_list) && new_qr_list.length > 0) {
+      let newPayloadList = new_qr_list.map(qr => qr.payload);
+      let newQrData = await stock_read_log.find({ company_id, payload: { $in: newPayloadList } }).exec();
+
+      newQrList = newQrList.concat(newQrData);
+    }
+
+    await stock_read_log.updateOne(
+      { _id: lastRecord._id },
+      { $set: {
+          qr_list: newQrList,
+          status_repacking: 1,
+          last_updated: new Date(),
+        }
+      }
+    );
+
+    res.status(200).json({
+      statusCode: 1,
+      message: 'Success'
+    });
+  } catch (error) {
+    res.status(500).json({
+      statusCode: 0,
+      message: error?.message || 'Something went wrong'
+    });
+  }
 })
 
 router.use('/', function(req, res, next) {
